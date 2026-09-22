@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>バーコード・メモ帳アプリ</title>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Html5-qrcode CDN for real camera barcode scan -->
+    <script src="https://unpkg.com/html5-qrcode" defer></script>
+    <style>
+        /* スムーズスクロールとゴム足抑制 */
+        html, body {
+            overscroll-behavior: none;
+            touch-action: manipulation;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        /* バーコード風フォント用・縞模様エリア */
+        .barcode-stripes {
+            background: linear-gradient(
+                90deg,
+                #000 0px, #000 2px, #fff 2px, #fff 4px,
+                #000 4px, #000 8px, #fff 8px, #fff 10px,
+                #000 10px, #000 12px, #fff 12px, #fff 15px,
+                #000 15px, #000 19px, #fff 19px, #fff 21px,
+                #000 21px, #000 23px, #fff 23px, #fff 26px,
+                #000 26px, #000 28px, #fff 28px, #fff 32px
+            );
+            background-repeat: repeat-x;
+        }
+        /* カスタムスクロールバー非表示（スッキリ化） */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col max-w-md mx-auto relative select-none">
+
+    <header class="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-20 flex items-center justify-between shadow-xs">
+        <div>
+            <h1 class="text-base font-bold text-slate-900 flex items-center gap-1.5">
+                <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
+                バーコードメモ
+            </h1>
+            <p class="text-xs text-slate-500">最大30個 / 現在: <span id="count-badge" class="font-semibold text-brand-600">0</span>個</p>
+        </div>
+        <button id="btn-clear-all" class="text-xs bg-red-50 text-red-600 hover:bg-red-100 active:scale-95 font-medium px-3 py-1.5 rounded-full border border-red-200 transition-all flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            一括クリア
+        </button>
+    </header>
+
+    <main class="flex-1 pb-24 overflow-y-auto px-4 pt-4 space-y-4">
+        
+        <!-- タブ切り替えボタン（親指操作用） -->
+        <div class="grid grid-cols-2 bg-slate-200/80 p-1 rounded-xl text-xs font-semibold">
+            <button id="tab-btn-scan" class="py-2.5 rounded-lg bg-white text-slate-900 shadow-xs transition-all flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                スキャン / 入力
+            </button>
+            <button id="tab-btn-list" class="py-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                一覧表 (<span id="tab-count-sub">0</span>)
+            </button>
+        </div>
+
+        <!-- VIEW 1: SCANNER & REGISTRATION -->
+        <section id="view-scan" class="space-y-4">
+            <!-- モード切り替え（実機カメラ / 手動モック入力） -->
+            <div class="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-slate-200 text-xs">
+                <span class="text-slate-500 font-medium">入力方式:</span>
+                <div class="flex bg-slate-100 p-0.5 rounded-lg">
+                    <button id="mode-btn-camera" class="px-2.5 py-1 rounded-md bg-white text-brand-600 font-semibold shadow-2xs transition-all">カメラ</button>
+                    <button id="mode-btn-manual" class="px-2.5 py-1 rounded-md text-slate-600 font-medium transition-all">手動/モック</button>
+                </div>
+            </div>
+
+            <!-- カメラプレビューコンテナ -->
+            <div id="container-camera" class="bg-slate-900 rounded-2xl overflow-hidden shadow-inner relative aspect-video flex flex-col items-center justify-center">
+                <div id="reader" class="w-full h-full"></div>
+                <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-4 text-center">
+                    <svg class="w-10 h-10 mb-2 opacity-50 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <p class="text-xs">カメラ未起動または非対応/権限なし</p>
+                    <button id="btn-start-camera" class="mt-2.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md transition-all active:scale-95">カメラを起動する</button>
+                </div>
+            </div>
+
+            <!-- 手動/モック入力エリア -->
+            <div id="container-manual" class="hidden bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-slate-700">バーコード数値入力</span>
+                    <button id="btn-mock-code" class="text-xs text-brand-600 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-lg font-medium transition-all">サンプレコード自動生成</button>
+                </div>
+                <input type="text" id="input-barcode-manual" placeholder="例: 4901777018865" maxlength="20" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-500">
+            </div>
+
+            <!-- 検出済みバーコード表示＆コメント入力フォーム -->
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+                <div>
+                    <label class="text-xs font-bold text-slate-500 block mb-1">読み取りバーコード値</label>
+                    <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+                        <span id="display-scanned-code" class="font-mono text-sm font-bold text-slate-800 flex-1 truncate">未読取</span>
+                        <span id="barcode-badge-status" class="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-medium">待機中</span>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-bold text-slate-500">10文字程度のコメント</label>
+                        <span id="comment-length-counter" class="text-[11px] text-slate-400">0/10</span>
+                    </div>
+                    <input type="text" id="input-comment" maxlength="12" placeholder="例: お茶 500ml" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 transition-all">
+                </div>
+
+                <button id="btn-save-record" disabled class="w-full bg-slate-300 text-slate-500 font-bold py-3 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    記録する（最大30個）
+                </button>
+            </div>
+        </section>
+
+        <!-- VIEW 2: LIST VIEW -->
+        <section id="view-list" class="hidden space-y-3">
+            <div id="list-empty-state" class="hidden text-center py-12 bg-white rounded-2xl border border-slate-200 p-6">
+                <svg class="w-12 h-12 text-slate-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+                <p class="text-xs text-slate-500">記録されたバーコードはありません</p>
+            </div>
+            <div id="records-container" class="space-y-2"></div>
+        </section>
+
+    </main>
+
+    <!-- Modal Detail -->
+    <div id="modal-barcode-detail" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-xl border border-slate-200 transform transition-all space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 id="modal-comment-title" class="font-bold text-slate-900 text-base truncate">コメント詳細</h3>
+                <button id="modal-close-btn" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6 flex flex-col items-center justify-center space-y-3">
+                <div class="w-full bg-white p-2 rounded-lg border border-slate-200 flex flex-col items-center justify-center overflow-x-auto">
+                    <canvas id="jan-barcode-canvas" class="max-w-full h-16"></canvas>
+                </div>
+                <div id="modal-barcode-value" class="font-mono text-base font-extrabold tracking-widest text-slate-900 bg-white px-3 py-1 rounded-lg border border-slate-200">
+                    4901234567890
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs text-slate-400 px-1">
+                <span id="modal-date-label">登録日時</span>
+                <button id="modal-delete-one" class="text-red-600 hover:text-red-700 font-medium">この項目を削除</button>
+            </div>
+
+            <button id="modal-copy-btn" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3 rounded-2xl text-xs transition-all active:scale-95">
+                数値をコピーする
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast-message" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-full shadow-lg opacity-0 pointer-events-none transition-opacity duration-300 z-50 flex items-center gap-2">
+        <span id="toast-text">通知メッセージ</span>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'barcode_memo_app_data_v1';
+        const MAX_RECORDS = 30;
+
+        let records = [];
+        let currentScannedValue = '';
+        let html5QrCode = null;
+        let isCameraRunning = false;
+        let selectedRecordId = null;
+
+        // DOM Elements
+        const countBadge = document.getElementById('count-badge');
+        const tabCountSub = document.getElementById('tab-count-sub');
+        const tabBtnScan = document.getElementById('tab-btn-scan');
+        const tabBtnList = document.getElementById('tab-btn-list');
+        const viewScan = document.getElementById('view-scan');
+        const viewList = document.getElementById('view-list');
+        
+        const modeBtnCamera = document.getElementById('mode-btn-camera');
+        const modeBtnManual = document.getElementById('mode-btn-manual');
+        const containerCamera = document.getElementById('container-camera');
+        const containerManual = document.getElementById('container-manual');
+        const cameraPlaceholder = document.getElementById('camera-placeholder');
+        const btnStartCamera = document.getElementById('btn-start-camera');
+
+        const inputBarcodeManual = document.getElementById('input-barcode-manual');
+        const btnMockCode = document.getElementById('btn-mock-code');
+        const displayScannedCode = document.getElementById('display-scanned-code');
+        const barcodeBadgeStatus = document.getElementById('barcode-badge-status');
+        const inputComment = document.getElementById('input-comment');
+        const commentLengthCounter = document.getElementById('comment-length-counter');
+        const btnSaveRecord = document.getElementById('btn-save-record');
+        const btnClearAll = document.getElementById('btn-clear-all');
+
+        const recordsContainer = document.getElementById('records-container');
+        const listEmptyState = document.getElementById('list-empty-state');
+
+        // Modal Elements
+        const modalDetail = document.getElementById('modal-barcode-detail');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+        const modalCommentTitle = document.getElementById('modal-comment-title');
+        const modalBarcodeValue = document.getElementById('modal-barcode-value');
+        const modalDateLabel = document.getElementById('modal-date-label');
+        const modalDeleteOne = document.getElementById('modal-delete-one');
+        const modalCopyBtn = document.getElementById('modal-copy-btn');
+        const janBarcodeCanvas = document.getElementById('jan-barcode-canvas');
+
+        // Toast
+        const toastMessage = document.getElementById('toast-message');
+        const toastText = document.getElementById('toast-text');
+
+        function showToast(msg) {
+            toastText.textContent = msg;
+            toastMessage.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toastMessage.classList.add('opacity-0', 'pointer-events-none');
+            }, 2500);
+        }
+
+        function loadRecords() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                records = raw ? JSON.parse(raw) : [];
+            } catch (e) {
+                records = [];
+            }
+            updateCounts();
+            renderList();
+        }
+
+        function saveRecordsToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+            } catch (e) {
+                showToast('保存容量エラー');
+            }
+            updateCounts();
+            renderList();
+        }
+
+        function updateCounts() {
+            const count = records.length;
+            countBadge.textContent = count;
+            tabCountSub.textContent = count;
+            countBadge.className = `font-semibold ${count >= MAX_RECORDS ? 'text-red-600' : 'text-brand-600'}`;
+        }
+
+        function renderList() {
+            recordsContainer.innerHTML = '';
+            if (records.length === 0) {
+                listEmptyState.classList.remove('hidden');
+                return;
+            }
+            listEmptyState.classList.add('hidden');
+
+            [...records].reverse().forEach((rec) => {
+                const card = document.createElement('div');
+                card.className = 'bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs hover:border-brand-300 transition-all flex items-center justify-between gap-3 active:scale-[0.99] cursor-pointer';
+                card.innerHTML = `
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-sm font-bold text-slate-800 truncate">${escapeHtml(rec.comment)}</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs font-mono text-slate-500">
+                            <span class="truncate">${escapeHtml(rec.code)}</span>
+                            <span class="text-[10px] text-slate-400 font-sans">${rec.createdAt.slice(5, 16)}</span>
+                        </div>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    </div>
+                `;
+                card.addEventListener('click', () => openModalDetail(rec.id));
+                recordsContainer.appendChild(card);
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function setScannedCode(code) {
+            currentScannedValue = code.trim();
+            displayScannedCode.textContent = currentScannedValue || '未読取';
+            if (currentScannedValue) {
+                barcodeBadgeStatus.textContent = '読取成功';
+                barcodeBadgeStatus.className = 'text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium';
+            } else {
+                barcodeBadgeStatus.textContent = '待機中';
+                barcodeBadgeStatus.className = 'text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-medium';
+            }
+            validateForm();
+        }
+
+        function validateForm() {
+            const commentVal = inputComment.value.trim();
+            const len = commentVal.length;
+            commentLengthCounter.textContent = `${len}/10`;
+            commentLengthCounter.className = len > 10 ? 'text-[11px] text-red-500 font-bold' : 'text-[11px] text-slate-400';
+
+            const isValid = currentScannedValue.length > 0 && commentVal.length > 0 && commentVal.length <= 12 && records.length < MAX_RECORDS;
+            if (isValid) {
+                btnSaveRecord.disabled = false;
+                btnSaveRecord.className = 'w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm active:scale-95';
+            } else {
+                btnSaveRecord.disabled = true;
+                btnSaveRecord.className = 'w-full bg-slate-300 text-slate-500 font-bold py-3 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 text-sm';
+            }
+        }
+
+        inputComment.addEventListener('input', validateForm);
+        inputBarcodeManual.addEventListener('input', (e) => {
+            setScannedCode(e.target.value);
+        });
+
+        btnMockCode.addEventListener('click', () => {
+            const randomCode = '49' + Math.floor(100000000000 + Math.random() * 900000000000).toString().slice(0, 11);
+            inputBarcodeManual.value = randomCode;
+            setScannedCode(randomCode);
+            showToast('サンプルコードを生成しました');
+        });
+
+        btnSaveRecord.addEventListener('click', () => {
+            if (records.length >= MAX_RECORDS) {
+                showToast('最大30個まで記録済みです');
+                return;
+            }
+            const commentVal = inputComment.value.trim();
+            if (!currentScannedValue || !commentVal) return;
+
+            const newRec = {
+                id: 'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                code: currentScannedValue,
+                comment: commentVal,
+                createdAt: new Date().toISOString()
+            };
+
+            records.push(newRec);
+            saveRecordsToStorage();
+
+            inputComment.value = '';
+            setScannedCode('');
+            inputBarcodeManual.value = '';
+            showToast('記録しました');
+        });
+
+        btnClearAll.addEventListener('click', () => {
+            if (records.length === 0) {
+                showToast('保存データはありません');
+                return;
+            }
+            records = [];
+            saveRecordsToStorage();
+            showToast('全データを一括クリアしました');
+        });
+
+        function drawJanBarcode(codeStr) {
+            const canvas = janBarcodeCanvas;
+            const ctx = canvas.getContext('2d');
+            
+            // パディングとバー幅の定義
+            const barWidth = 2;
+            const height = 60;
+            
+            // 有効な数値のみに正規化（足りない場合は0埋め、長い場合は切り捨て）
+            let digits = codeStr.replace(/\D/g, '');
+            if (digits.length === 0) digits = '4901234567890';
+            while (digits.length < 13) digits += '0';
+            digits = digits.slice(0, 13);
+
+            // EAN-13 / JAN-13 のパターン定義
+            // L-code, G-code, R-code
+            const L_PATTERNS = ["0001101", "0011001", "0010011", "0111101", "0100011", "0110001", "0101111", "0111011", "0110111", "0001011"];
+            const G_PATTERNS = ["0100111", "0110011", "0011011", "0100001", "0011101", "0111001", "0000101", "0010001", "0001001", "0010111"];
+            const R_PATTERNS = ["1110010", "1100110", "1101100", "1000010", "1011100", "1001110", "1010000", "1000100", "1001000", "1110100"];
+
+            // 1桁目に応じたL/Gパターンの選択（EAN-13構造）
+            const firstDigit = parseInt(digits[0], 10);
+            const structureTable = [
+                "LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG",
+                "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"
+            ];
+            const parityMask = structureTable[firstDigit] || "LLLLLL";
+
+            // ビット列の構築（ガードバー含む）
+            // 開始ガード (101)
+            let bitString = "101";
+
+            // 左側 6桁 (1〜6桁目)
+            for (let i = 1; i <= 6; i++) {
+                const d = parseInt(digits[i], 10);
+                if (parityMask[i - 1] === 'L') {
+                    bitString += L_PATTERNS[d];
+                } else {
+                    bitString += G_PATTERNS[d];
+                }
+            }
+
+            // 中央ガード (01010)
+            bitString += "01010";
+
+            // 右側 6桁 (7〜12桁目 + チェックデジット13桁目)
+            for (let i = 7; i <= 12; i++) {
+                const d = parseInt(digits[i], 10);
+                bitString += R_PATTERNS[d];
+            }
+            const checkDigit = parseInt(digits[12], 10);
+            bitString += R_PATTERNS[checkDigit];
+
+            // 終了ガード (101)
+            bitString += "101";
+
+            // キャンバスサイズ設定
+            const totalModules = bitString.length;
+            const quietZone = 15; // 左右余白
+            canvas.width = (totalModules * barWidth) + (quietZone * 2);
+            canvas.height = height + 20; // 文字表示用の余白を含む
+
+            // 背景クリア（白）
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // バーの描画
+            ctx.fillStyle = '#000000';
+            for (let i = 0; i < bitString.length; i++) {
+                if (bitString[i] === '1') {
+                    ctx.fillRect(quietZone + (i * barWidth), 5, barWidth, height - 15);
+                }
+            }
+
+            // JANコードの数字テキストを描画
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#1e293b';
+
+            // 1桁目（左側ガードの外側）
+            ctx.fillText(digits[0], quietZone - 8, height - 2);
+
+            // 左側6桁
+            let leftGroupText = digits.slice(1, 7);
+            ctx.fillText(leftGroupText, quietZone + (3 + 24 * barWidth) / 2, height - 2);
+
+            // 右側6桁
+            let rightGroupText = digits.slice(7, 13);
+            ctx.fillText(rightGroupText, quietZone + (3 + 42 * barWidth + 5 * barWidth + 24 * barWidth) / 2, height - 2);
+        }
+
+        function openModalDetail(id) {
+            const found = records.find(r => r.id === id);
+            if (!found) return;
+            selectedRecordId = id;
+            modalCommentTitle.textContent = found.comment;
+            modalBarcodeValue.textContent = found.code;
+            modalDateLabel.textContent = `登録日時: ${found.createdAt.replace('T', ' ').slice(0, 16)}`;
+            
+            // JANコード描画実行
+            drawJanBarcode(found.code);
+
+            modalDetail.classList.remove('hidden');
+        }
+
+        modalCloseBtn.addEventListener('click', () => {
+            modalDetail.classList.add('hidden');
+            selectedRecordId = null;
+        });
+
+        modalDeleteOne.addEventListener('click', () => {
+            if (!selectedRecordId) return;
+            records = records.filter(r => r.id !== selectedRecordId);
+            saveRecordsToStorage();
+            modalDetail.classList.add('hidden');
+            selectedRecordId = null;
+            showToast('項目を削除しました');
+        });
+
+        modalCopyBtn.addEventListener('click', () => {
+            const val = modalBarcodeValue.textContent;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(val).then(() => {
+                    showToast('数値をコピーしました');
+                }).catch(() => {
+                    fallbackCopy(val);
+                });
+            } else {
+                fallbackCopy(val);
+            }
+        });
+
+        function fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast('数値をコピーしました');
+        }
+
+        tabBtnScan.addEventListener('click', () => {
+            tabBtnScan.className = 'py-2.5 rounded-lg bg-white text-slate-900 shadow-xs transition-all flex items-center justify-center gap-1.5 font-semibold';
+            tabBtnList.className = 'py-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5 font-medium';
+            viewScan.classList.remove('hidden');
+            viewList.classList.add('hidden');
+        });
+
+        tabBtnList.addEventListener('click', () => {
+            tabBtnList.className = 'py-2.5 rounded-lg bg-white text-slate-900 shadow-xs transition-all flex items-center justify-center gap-1.5 font-semibold';
+            tabBtnScan.className = 'py-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5 font-medium';
+            viewList.classList.remove('hidden');
+            viewScan.classList.add('hidden');
+            stopCamera();
+        });
+
+        modeBtnCamera.addEventListener('click', () => {
+            containerCamera.classList.remove('hidden');
+            containerManual.classList.add('hidden');
+        });
+
+        modeBtnManual.addEventListener('click', () => {
+            containerManual.classList.remove('hidden');
+            containerCamera.classList.add('hidden');
+            stopCamera();
+        });
+
+        btnStartCamera.addEventListener('click', startCamera);
+
+        async function startCamera() {
+            if (typeof Html5Qrcode === 'undefined') {
+                showToast('カメラライブラリ読み込み中');
+                return;
+            }
+            try {
+                cameraPlaceholder.classList.add('hidden');
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode('reader');
+                }
+                await html5QrCode.start(
+                    { facingMode: 'environment' },
+                    { fps: 10, qrbox: { width: 220, height: 120 } },
+                    (decodedText) => {
+                        setScannedCode(decodedText);
+                        showToast('バーコードを検出！');
+                    },
+                    (errorMessage) => {}
+                );
+                isCameraRunning = true;
+            } catch (err) {
+                cameraPlaceholder.classList.remove('hidden');
+                showToast('カメラ起動失敗（権限要件）');
+            }
+        }
+
+        async function stopCamera() {
+            if (html5QrCode && isCameraRunning) {
+                try {
+                    await html5QrCode.stop();
+                    html5QrCode.clear();
+                } catch(e) {}
+                isCameraRunning = false;
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadRecords();
+        });
+    </script>
+</body>
+</html>
